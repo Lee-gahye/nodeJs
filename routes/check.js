@@ -15,12 +15,11 @@ router.post('/', async function(req, res, next) {
     const backupUnit = req.body.backupUnit;
     const backupValue = req.body.backupValue;
 
-
     res.send(config.collection);
-
     // Use connect method to connect to the server
     await MongoClient.connect(url, async function(err, client) {
 
+        console.log('connect');
         logger.info("Connected successfully to server");
         const todayCheck = moment().tz('Asia/Seoul').format("YYYY-MM-DD");
 
@@ -30,6 +29,8 @@ router.post('/', async function(req, res, next) {
         const db = client.db(config.db);
         const collection = db.collection(config.collection);
 
+        collection.updateMany( {}, {$rename:{"sampleYn":"SampleYn"}})
+
         await db.createCollection('samplehistory').then(value => {
         }).catch(error => {});
 
@@ -37,12 +38,12 @@ router.post('/', async function(req, res, next) {
         let findResult = await collection.find({asset_type:'table', status:'검토완료',  $or: [ { SampleCheckDate : null } , { SampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize);
         let findList = await findResult.toArray();
 
-        await collectionHistory.remove( { date : {$lt: backupDay } });
+        await collectionHistory.deleteMany( { date : {$lt: backupDay } });
         logger.info('Backup day: ' + backupDay);
         logger.info('Total count: ' + findResult.count());
 
-        if (await collectionHistory.find({date:todayCheck}).count() < 1)
-            await collectionHistory.insert( {date: todayCheck, 'total_count' : await findResult.count() } );
+        if (await collectionHistory.find({date:todayCheck, $or: [{total_count:0},{total_count: null}]}).count()< 1)
+            await collectionHistory.insertOne( {date: todayCheck, 'total_count' : await findResult.count() } );
 
         while( findList.length > 0 ){
 
@@ -57,15 +58,15 @@ router.post('/', async function(req, res, next) {
 
                 if (result.successBool){
                     s_count++;
-                    await collection.update({asset_type:'table', "dataset_id" : item.dataset_id},{$set : { SampleYn: 'Y', SampleCheckDate : todayCheck, SampleCheckCode : result.returnCode ,SampleCheckMsg : config.code[result.returnCode] }} , {upsert:true ,multi: true});
+                    await collection.updateMany({asset_type:'table', "dataset_id" : item.dataset_id},{$set : { SampleYn: 'Y', SampleCheckDate : todayCheck, SampleCheckCode : result.returnCode ,SampleCheckMsg : config.code[result.returnCode] }} , {upsert:true ,multi: true});
                 }else{
                     f_count++;
-                    await collection.update({asset_type:'table', "dataset_id" : item.dataset_id},{$set : { SampleYn: 'N', SampleCheckDate : todayCheck, SampleCheckCode : result.returnCode ,SampleCheckMsg : config.code[result.returnCode] }} , {upsert:true ,multi: true});
+                    await collection.updateMany({asset_type:'table', "dataset_id" : item.dataset_id},{$set : { SampleYn: 'N', SampleCheckDate : todayCheck, SampleCheckCode : result.returnCode ,SampleCheckMsg : config.code[result.returnCode] }} , {upsert:true ,multi: true});
                 }
 
             }//for i
 
-            await collectionHistory.update({date: todayCheck},  { $inc : {'exec_count' : findList.length, 'success_count': s_count, 'fail_count':f_count} } , {upsert: true} );
+            await collectionHistory.updateMany({date: todayCheck},  { $inc : {'exec_count' : findList.length, 'success_count': s_count, 'fail_count':f_count} } , {upsert: true} );
             logger.info('Sample check history update!');
 
             findList = await collection.find({asset_type:'table', status:'검토완료' , $or: [ { SampleCheckDate : null } , { SampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize).toArray();
@@ -103,7 +104,6 @@ async function col_compare(dataset_id, col_list) {
 
     let sheet = workBook.SheetNames[0]; // 배열이므로 .length를 사용하여 갯수 확인가능
     let worksheet = XLSX.utils.sheet_to_json(workBook.Sheets[sheet]);
-
 
     if ( worksheet.length == 0 ){
         logger.error('Sample file empty: ' + dataset_id);
@@ -149,11 +149,22 @@ async function col_compare(dataset_id, col_list) {
 async function get_header_row(sheet) {
     var headers = [];
     var range = XLSX.utils.decode_range(sheet['!ref']);
-    var C, R = range.s.r; /* start in the first row */
+    //var C, R = range.s.r; /* start in the first row */
     /* walk every column in the range */
-    for(C = range.s.c; C <= range.e.c; ++C) {
-        var cell = sheet[XLSX.utils.encode_cell({c:C, r:0})] /* find the cell in the first row */
-        var hdr = "UNKNOWN"; // <-- replace with your desired default
+    let check;
+    let C, cell, hdr;
+    for( C = range.s.c; C <= range.e.c; ++C) {
+        cell = sheet[XLSX.utils.encode_cell({c:C, r:1})] /* find the cell in the first row */
+        hdr = "UNKNOWN"; // <-- replace with your desired default
+        if(cell && cell.t) hdr = XLSX.utils.format_cell(cell);
+        check = C;
+        if(hdr == "UNKNOWN")
+            break;
+    }
+
+    for(C = range.s.c; C < check; ++C) {
+        cell = sheet[XLSX.utils.encode_cell({c:C, r:0})] /* find the cell in the first row */
+        hdr = "UNKNOWN"; // <-- replace with your desired default
         if(cell && cell.t) hdr = XLSX.utils.format_cell(cell);
         headers.push(hdr);
     }
