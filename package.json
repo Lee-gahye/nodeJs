@@ -1,0 +1,22 @@
+{
+  "name": "samplecheck",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node ./bin/www"
+  },
+  "dependencies": {
+    "body-parser": "^1.19.0",
+    "cookie-parser": "~1.4.4",
+    "debug": "~2.6.9",
+    "express": "^4.16.4",
+    "http-errors": "~1.6.3",
+    "log4js": "^6.3.0",
+    "moment-timezone": "^0.5.32",
+    "mongodb": "^3.6.3",
+    "morgan": "~1.9.1",
+    "pug": "2.0.0-beta11",
+    "touch-for-windows": "^1.0.0",
+    "xlsx": "^0.16.9"
+  }
+}

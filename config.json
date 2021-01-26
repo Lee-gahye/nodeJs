@@ -1,0 +1,13 @@
+{
+  "db" : "dp",
+  "collection" : "dpasset_C1",
+  "poolSize" : 1000,
+  "code" : {
+    "0" : "sample validate success",
+    "1" : "file not found",
+    "2" : "korean row none",
+    "3" : "doc col more",
+    "4" : "sample col more",
+    "5" : "col different"
+  }
+}
