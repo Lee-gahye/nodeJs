@@ -42,8 +42,8 @@ router.post('/', async function(req, res, next) {
         logger.info('Backup day: ' + backupDay);
         logger.info('Total count: ' + findResult.count());
 
-        if (await collectionHistory.find({date:todayCheck, $or: [{total_count:0},{total_count: null}]}).count()< 1)
-            await collectionHistory.insertOne( {date: todayCheck, 'total_count' : await findResult.count() } );
+        let todayTime = moment().tz('Asia/Seoul').format("YYYYMMDDhhmmss");
+         await collectionHistory.insertOne(   {date: todayTime, 'total_count' : await findResult.count() } );
 
         while( findList.length > 0 ){
 
@@ -66,7 +66,7 @@ router.post('/', async function(req, res, next) {
 
             }//for i
 
-            await collectionHistory.updateMany({date: todayCheck},  { $inc : {'exec_count' : findList.length, 'success_count': s_count, 'fail_count':f_count} } , {upsert: true} );
+            await collectionHistory.updateOne({date: todayTime},  { $inc : {'exec_count' : findList.length, 'success_count': s_count, 'fail_count':f_count} } , {upsert: true} );
             logger.info('Sample check history update!');
 
             findList = await collection.find({asset_type:'table', status:'검토완료' , $or: [ { SampleCheckDate : null } , { SampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize).toArray();
