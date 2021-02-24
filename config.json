@@ -1,13 +1,15 @@
 {
   "db" : "dp",
-  "collection" : "dpasset_C1",
+  "collection" : "dpasset",
   "poolSize" : 1000,
   "code" : {
-    "0" : "sample validate success",
-    "1" : "file not found",
-    "2" : "korean row none",
-    "3" : "doc col more",
-    "4" : "sample col more",
-    "5" : "col different"
+    "0" : "샘플 파일 검증 성공",
+    "1" : "샘플 파일이 비어있음",
+    "2" : "영문 컬럼 개수가 다름",
+    "3" : "영문 컬럼명이 다름",
+    "4" : "not null 에러",
+    "5" : "데이터 타입이 다름",
+    "6" : "한글 컬럼이 없음",
+    "7" : "샘플 파일이 존재하지 않음"
   }
 }
