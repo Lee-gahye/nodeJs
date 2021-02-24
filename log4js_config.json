@@ -1,0 +1,27 @@
+{
+  "appenders": {
+    "logs" : {
+      "type": "dateFile",
+      "absolute": true,
+      "filename": "/data/ds/log/sample/sample_validate.log",
+      "pattern": "_yyyyMMdd",
+      "maxLogSize": 1073741824,
+      "backups": 10,
+      "layout":
+      { "type": "pattern", "pattern": "%d %h %c %l %p %m " }
+    },
+    "console" : {
+      "type": "console",
+      "layout": {
+        "type": "pattern",
+        "pattern": "%d %h %c %l %p %m"
+      }
+    }
+  },
+  "categories": {
+    "default": { "appenders": ["logs"], "level": "debug", "enableCallStack": true }
+  }
+
+
+
+}
