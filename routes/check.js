@@ -7,6 +7,9 @@ const fs = require('fs');
 const moment = require('moment-timezone');
 const log4js = require('log4js');
 const logger = log4js.getLogger("Samplecheck");
+const path = require('path');
+const _ = require('lodash');
+const __ = require('lodash-contrib');
 
 /* GET users listing. */
 router.post('/', async function(req, res, next) {
@@ -21,58 +24,115 @@ router.post('/', async function(req, res, next) {
 
         console.log('connect');
         logger.info("Connected successfully to server");
-        const todayCheck = moment().tz('Asia/Seoul').format("YYYY-MM-DD");
-
-        let backupDay;
-        backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYY-MM-DD");
 
         const db = client.db(config.db);
         const collection = db.collection(config.collection);
+        await collection.createIndex({ dataset_id: 1});
+
+        await db.createCollection('samplehistory').then(value => {}).catch(error => {});
+        const collectionHistory = db.collection('samplehistory');
+
+        await db.createCollection('samplefail_history').then(value => {}).catch(error => {});
+        const collectionFailHistory = db.collection('samplefail_history');
+
+        const todayCheck = moment().tz('Asia/Seoul').format("YYYY-MM-DD");
+        const backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYY-MM-DD");
+        const todayTime = moment().tz('Asia/Seoul').format("YYYYMMDDhhmmss");
 
         collection.updateMany( {}, {$rename:{"sampleYn":"SampleYn"}})
-
-        await db.createCollection('samplehistory').then(value => {
-        }).catch(error => {});
-
-        const collectionHistory = db.collection('samplehistory');
         let findResult = await collection.find({asset_type:'table', status:'검토완료',  $or: [ { SampleCheckDate : null } , { SampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize);
         let findList = await findResult.toArray();
 
-        await collectionHistory.deleteMany( { date : {$lt: backupDay } });
+        await collectionHistory.insertOne(   {date: todayTime, 'total_count' : await findResult.count() } );
+        const history_id = await collectionHistory.find().sort( { "_id": -1 } ).limit(1).toArray();
+
+
         logger.info('Backup day: ' + backupDay);
         logger.info('Total count: ' + findResult.count());
 
-        let todayTime = moment().tz('Asia/Seoul').format("YYYYMMDDhhmmss");
-         await collectionHistory.insertOne(   {date: todayTime, 'total_count' : await findResult.count() } );
-
-        while( findList.length > 0 ){
-
-            logger.info('FindList length: ' + findList.length);
-            let s_count = 0;
-            let f_count = 0;
-            for(let i=0; i<findList.length; i++){
+        while( findList.length > 0 ) {
+            let datasetList = [];
+            for(let i=0; i<findList.length; i++) {
                 let item = findList[i];
+                await datasetList.push({ "dataset_id" : item.dataset_id});
+            }
 
-                let col_list = await collection.find({asset_type:'column', "dataset_id" : item.dataset_id }).toArray();
-                let result = await col_compare(item.dataset_id, col_list);
+            let match_filter = { $and: [{asset_type:'column'},{ $or: datasetList}]};
 
-                if (result.successBool){
-                    s_count++;
-                    await collection.updateMany({asset_type:'table', "dataset_id" : item.dataset_id},{$set : { SampleYn: 'Y', SampleCheckDate : todayCheck, SampleCheckCode : result.returnCode ,SampleCheckMsg : config.code[result.returnCode] }} , {upsert:true ,multi: true});
+            let findList_result = await collection.aggregate([
+                {$match : match_filter }
+                ,{$project: {"_id":0, "name":1, "nullable":1, "data_type":1, "dataset_id":1}}
+                // ,{$group: {_id:"$dataset_id", name: {$addToSet: "$name"}, nullable: {$addToSet: "$nullable"}, data_type:{$addToSet:"$data_type"}}}
+                ]).toArray();
+
+            let f_count = 0, s_count = 0;
+            let bulk = [];
+            let bulk_failHistory = [];
+            let workBook;
+
+            logger.info('Sample validate start');
+            for(let i=0; i<datasetList.length; i++) {
+                let item = datasetList[i];
+                let dirPath = item.dataset_id.split('.');
+
+                const _file =  dirPath[0] + '.' + dirPath[1]  + '.' + dirPath[3] ;
+                const fileCheck1 = path.join('C:\\sample\\', dirPath[0], dirPath[1], item.dataset_id + ".xlsx");
+                const fileCheck2 = path.join('C:\\sample\\', dirPath[0], dirPath[1], _file + '.xlsx');
+
+                if (await fs.existsSync(fileCheck1) ){
+                    workBook = await XLSX.readFile(fileCheck1, {type : 'buffer', cellDates : true , cellNF :  false , cellText : true});
+                    logger.info('샘플 파일 경로: ' + fileCheck1);
+                }else if (await fs.existsSync(fileCheck2)) {
+                    workBook = await XLSX.readFile(fileCheck2, {type : 'buffer', cellDates : true , cellNF :  false , cellText : true});
+                    logger.info('샘플 파일 경로: ' + fileCheck2);
                 }else{
                     f_count++;
-                    await collection.updateMany({asset_type:'table', "dataset_id" : item.dataset_id},{$set : { SampleYn: 'N', SampleCheckDate : todayCheck, SampleCheckCode : result.returnCode ,SampleCheckMsg : config.code[result.returnCode] }} , {upsert:true ,multi: true});
+                    logger.error('샘플 파일 존재하지 않습니다: ' + item.dataset_id);
+                    await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
+                    await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0]._id, 'dataset_id' : item.dataset_id, SampleCheckCode : '7' ,SampleCheckMsg : '샘플 파일 존재하지 않습니다'}  });
+                    continue;
                 }
 
-            }//for i
+                let grouped = await groupBy(findList_result, colList => colList.dataset_id);
+                let result = await sampleValidation(workBook, item.dataset_id, grouped.get(item.dataset_id));
 
-            await collectionHistory.updateOne({date: todayTime},  { $inc : {'exec_count' : findList.length, 'success_count': s_count, 'fail_count':f_count} } , {upsert: true} );
+                if (result[0].returnCode=='0' ){
+                    s_count++;
+                    await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'Y', SampleCheckDate : todayCheck }} } });
+                    await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0]._id, 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
+                }else{
+                    f_count++;
+                    await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
+
+                    if (result[0].returnCode=='1' || result[0].returnCode=='2' || result[0].returnCode=='3'){
+                        await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0]._id, 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
+                    }else{
+                        for(let jj = 0; jj< result.length; jj++){
+                            let colResult = result[jj];
+                            await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0]._id, 'dataset_id' : colResult.dataset_id, column: colResult.column, SampleCheckCode : colResult.returnCode ,SampleCheckMsg : config.code[colResult.returnCode]}  });
+                        }
+                    }
+                }
+
+            }//for
+
+            logger.info('Sample validate done');
+
+            await collection.bulkWrite(bulk);
+            await collectionFailHistory.bulkWrite(bulk_failHistory);
+            logger.info('bulk done');
+
+            await collectionHistory.updateOne( {date: todayTime},  { $inc : {'exec_count' : findList.length, 'success_count': s_count, 'fail_count':f_count} } , {upsert: true} );
             logger.info('Sample check history update!');
 
             findList = await collection.find({asset_type:'table', status:'검토완료' , $or: [ { SampleCheckDate : null } , { SampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize).toArray();
             logger.info('One cycle done[pool size / findList length]');
 
         }//while
+
+        await collectionHistory.deleteMany( { date : {$lt: backupDay } });
+        await collectionFailHistory.deleteMany( { parent_id : {$ne: history_id } });
+
 
         logger.info('Sample validate done!');
         console.log('DONE!')
@@ -81,95 +141,165 @@ router.post('/', async function(req, res, next) {
 
 });
 
-async function col_compare(dataset_id, col_list) {
+async function groupBy(list, keyGetter) {
+    const map = new Map();
+    list.forEach((item) => {
+        const key = keyGetter(item);
+        const collection = map.get(key);
+        if (!collection) {
+            map.set(key, [item]);
+        } else {
+            collection.push(item);
+        }
+    });
+    return map;
+}
 
-    let dirPath = dataset_id.split('.');
-    let workBook ;
 
-    const _file =  dirPath[0] + '.' + dirPath[1]  + '.' + dirPath[3] ;
-    const fileCheck1 = 'C:\\sample\\' + dirPath[0] + '\\' + dirPath[1] + '\\' + dataset_id + ".xlsx";
-    const fileCheck2 = 'C:\\sample\\' + dirPath[0] + '\\' + dirPath[1] + '\\' + _file + '.xlsx' ;
-
-
-    if (await fs.existsSync(fileCheck1) ){
-        workBook = await XLSX.readFile(fileCheck1, {type : 'buffer', cellDates : true , cellNF :  false , cellText : true});
-        logger.info('Sample file path: ' + fileCheck1);
-    }else if (await fs.existsSync(fileCheck2)) {
-        workBook = await XLSX.readFile(fileCheck2 , {type : 'buffer', cellDates : true , cellNF :  false , cellText : true});
-        logger.info('Sample file path: ' + fileCheck2);
-    }else{
-        logger.error('Sample file not found: ' + dataset_id);
-        return { returnCode : '1', successBool : false }
-    }
+async function sampleValidation(workBook, dataset_id, col_list) {
 
     let sheet = workBook.SheetNames[0]; // 배열이므로 .length를 사용하여 갯수 확인가능
     let worksheet = XLSX.utils.sheet_to_json(workBook.Sheets[sheet]);
 
+
     if ( worksheet.length == 0 ){
-        logger.error('Sample file empty: ' + dataset_id);
-        return { returnCode : '2', successBool : false }
+        logger.error('파일이 비어있습니다: ' + dataset_id);
+        return [{ returnCode : '1', returnMsg : '파일이 비어있습니다', dataset_id:dataset_id }];
     }else{
-        const headers = await get_header_row(workBook.Sheets[sheet]);
-        if (headers.includes('UNKNOWN')) {
-            logger.error('korean row error: ' + dataset_id);
-            return { returnCode : '2', successBool : false }
-        }
-    }
+        if( Object.keys(worksheet[0]).length != col_list.length) {
+            logger.error('영문 컬럼 개수가 다릅니다: ' + dataset_id);
+            return [{ returnCode : '2', returnMsg : '영문 컬럼 개수가 다릅니다', dataset_id:dataset_id }];
+        }else{
 
+            let compareCheck = 0;
+            let result = new Array();
+            let headers;
+            headers = await get_header_row(workBook.Sheets[sheet]);
 
-    if( Object.keys(worksheet[0]).length < col_list.length) {
-        logger.error('Doc col more: ' + dataset_id);
-        return { returnCode : '3', successBool : false }
-    }else if( Object.keys(worksheet[0]).length > col_list.length) {
-        logger.error('Sample col more: ' + dataset_id);
-        return { returnCode : '4', successBool : false }
-    }else {//sample.length == doc.length
-        let compareCheck = 0;
-        for (let j = 0; j < col_list.length; j++) {
-            let itemCol = col_list[j];
+            for (let j = 0; j < col_list.length; j++) {
+                let itemCol = col_list[j];
 
-            for (let key in worksheet[0]) {
-                if (worksheet[0][key].toLowerCase() == itemCol.name.toLowerCase()) {
-                    compareCheck++;
-                    continue;
+                for (let jj = 0; jj < headers.length; jj++) {
+                    let colName = headers[jj];
+
+                    if (colName.eng == itemCol.name){
+                        let output = await col_check( workBook.Sheets[sheet], jj, itemCol.nullable, itemCol.data_type );
+
+                        if(!output[0]){
+                            result.push( { column:colName.eng, returnCode : '4', returnMsg : 'null 값이 존재합니다', dataset_id:dataset_id});
+                        }
+                        if(!output[1]){
+                            result.push( { column:colName.eng, returnCode : '5', returnMsg : '데이터타입이 다릅니다', dataset_id:dataset_id });
+                        }
+                        if(colName.kor == null){
+                            result.push( { column:colName.eng, returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다', dataset_id:dataset_id });
+                        }
+                        continue;
+                    }
+                }//for jj
+
+                for (let key in worksheet[0]){
+                    if ( worksheet[0][key].toString().toLowerCase() == itemCol.name.toLowerCase() ) {
+                        compareCheck++;
+                        continue;
+                    }
+                }//for key
+
+            }//for j
+
+            if (col_list.length == compareCheck) {
+                if(result.length > 0){
+                    return result;
+                }else{
+                    logger.info('Sample validate success: ' + dataset_id );
+                    return [{ returnCode : '0', returnMsg : '샘플 파일 검증 성공', dataset_id:dataset_id }];
                 }
+            }else {
+                logger.error('Col different: ' + dataset_id );
+                return [{ returnCode : '3', returnMsg : '영문 컬럼명이 다릅니다', dataset_id:dataset_id }];
             }
-        }//for j
 
-        if (col_list.length == compareCheck) {
-            logger.info('Sample validate success: ' + dataset_id );
-            return { returnCode : '0', successBool : true }
-        }else {
-            logger.error('Col different: ' + dataset_id );
-            return { returnCode : '5', successBool : false }
         }
-    }//els
 
+    }
 }
+
+async function col_check(sheet, j, nullable, type) {
+
+    var range = XLSX.utils.decode_range(sheet['!ref']);
+
+    let cell;
+    let typeCheck = true, nullCheck = true;
+
+    for( let C = 2; C <= range.e.r; ++C) {
+        cell = sheet[XLSX.utils.encode_cell({c: j, r: C})] /* eng row */
+        if ( !(cell && cell.t)) { //null
+            if(nullable =='N')
+                nullCheck = false;
+        } else {
+
+            if(!typeCheck)
+                continue;
+
+            let v = cell.v.toString();
+            let val = _.toNumber(v.replace(/,/g,'')); // str -> number
+
+
+            if(v == 'null' || v=='NULL')
+                continue;
+
+            /////data type check
+            // if (type == 'float' || type == 'real') {
+            //   typeCheck = __.isFloat(val);
+            //   if(isNaN(val)) typeCheck = false;
+            if (type == 'numeric' || type == 'NUMERIC' || type == 'decimal'|| type == 'float' || type == 'real') {
+                typeCheck = __.isNumeric(val);
+                if(isNaN(val)) typeCheck = false;
+            }else if ( type == 'tinyint') {
+                typeCheck = (val >= 0 && val <= 255) ? true : false;
+                if(isNaN(val)) typeCheck = false;
+            }else if ( type == 'bigint') {
+                typeCheck = (val >= -9223372036854775808 && val <= 9223372036854775807) ? true : false;
+                if(isNaN(val)) typeCheck = false;
+            }else if ( type == 'smallint') {
+                typeCheck = (val >= -32768 && val <= 32767) ? true : false;
+                if(isNaN(val)) typeCheck = false;
+            }else if ( type == 'int') {
+                typeCheck = (val >= -2147483648 && val <= 2147483647) ? true : false;
+                if(isNaN(val)) typeCheck = false;
+            }else if ( type == 'bit') {
+                typeCheck = (val == 0 || val == 1) ? true : false;
+                if (isNaN(val)) typeCheck = false;
+            }
+        }//else
+
+        if(nullCheck ==false && typeCheck==false)
+            return [false, false];
+
+    }//for
+
+    return [nullCheck, typeCheck];
+}
+
 async function get_header_row(sheet) {
-    var headers = [];
+
     var range = XLSX.utils.decode_range(sheet['!ref']);
     //var C, R = range.s.r; /* start in the first row */
     /* walk every column in the range */
-    let check;
-    let C, cell, hdr;
+
+    let colArr=new Array();
+    let C, cellKor,cellEng;
     for( C = range.s.c; C <= range.e.c; ++C) {
-        cell = sheet[XLSX.utils.encode_cell({c:C, r:1})] /* find the cell in the first row */
-        hdr = "UNKNOWN"; // <-- replace with your desired default
-        if(cell && cell.t) hdr = XLSX.utils.format_cell(cell);
-        check = C;
-        if(hdr == "UNKNOWN")
-            break;
+        cellEng = sheet[XLSX.utils.encode_cell({c:C, r:1})] /* eng row */
+        cellKor = sheet[XLSX.utils.encode_cell({c:C, r:0})] /* kor row */
+
+        let colJson = new Object;
+        colJson.eng = (cellEng && cellEng.t)?cellEng.v : null;
+        colJson.kor = (cellKor && cellKor.t)?cellKor.v : null;
+        colArr.push(colJson);
     }
 
-    for(C = range.s.c; C < check; ++C) {
-        cell = sheet[XLSX.utils.encode_cell({c:C, r:0})] /* find the cell in the first row */
-        hdr = "UNKNOWN"; // <-- replace with your desired default
-        if(cell && cell.t) hdr = XLSX.utils.format_cell(cell);
-        headers.push(hdr);
-    }
-    return headers;
+    return colArr;
 }
-
 
 module.exports = router;
