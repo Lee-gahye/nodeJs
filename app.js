@@ -10,9 +10,6 @@ var checkRouter = require('./routes/check');
 
 var app = express();
 
-
-
-
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'pug');
@@ -28,14 +25,7 @@ app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/check', checkRouter);
 
-log4js.configure({
-  appenders: {
-    'Samplecheck': { type: 'file', filename: 'samplecheck.log' }
-  },
-  categories: {
-    default: { appenders: ['Samplecheck'], level: 'DEBUG' },
-  }
-});
+log4js.configure('log4js_config.json');
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
@@ -57,4 +47,4 @@ app.use(function(err, req, res, next) {
 
 
 module.exports = app;
-app.listen(3000, () => console.log("Listening on port 3000..."));
+app.listen(3001, () => console.log("Listening on port 3001..."));
