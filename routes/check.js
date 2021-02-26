@@ -50,6 +50,8 @@ router.post('/', async function(req, res, next) {
         logger.info('Backup day: ' + backupDay);
         logger.info('Total count: ' + findResult.count());
 
+        const fileRoot = config.root;
+
         while( findList.length > 0 ) {
             let datasetList = [];
             for(let i=0; i<findList.length; i++) {
@@ -76,8 +78,8 @@ router.post('/', async function(req, res, next) {
                 let dirPath = item.dataset_id.split('.');
 
                 const _file =  dirPath[0] + '.' + dirPath[1]  + '.' + dirPath[3] ;
-                const fileCheck1 = path.join('C:\\sample\\', dirPath[0], dirPath[1], item.dataset_id + ".xlsx");
-                const fileCheck2 = path.join('C:\\sample\\', dirPath[0], dirPath[1], _file + '.xlsx');
+                const fileCheck1 = path.join(fileRoot, dirPath[0], dirPath[1], item.dataset_id + ".xlsx");
+                const fileCheck2 = path.join(fileRoot, dirPath[0], dirPath[1], _file + '.xlsx');
 
                 if (await fs.existsSync(fileCheck1) ){
                     workBook = await XLSX.readFile(fileCheck1, {type : 'buffer', cellDates : true , cellNF :  false , cellText : true});
