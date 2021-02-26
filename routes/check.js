@@ -92,29 +92,35 @@ router.post('/', async function(req, res, next) {
                     f_count++;
                     logger.error('샘플 파일 존재하지 않습니다: ' + item.dataset_id);
                     await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
-                    await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : item.dataset_id, SampleCheckCode : '7' ,SampleCheckMsg : '샘플 파일 존재하지 않습니다'}  });
                     continue;
                 }
 
                 let grouped = await groupBy(findList_result, colList => colList.dataset_id);
                 let result = await sampleValidation(workBook, item.dataset_id, grouped.get(item.dataset_id));
 
+                //fail history : no record : code : 0 / 7
                 if (result[0].returnCode=='0' ){
                     s_count++;
                     await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'Y', SampleCheckDate : todayCheck }} } });
-                    await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
+                    // await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
                 }else{
                     f_count++;
-                    await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
 
-                    if (result[0].returnCode=='1' || result[0].returnCode=='2' || result[0].returnCode=='3'){
+                    if(result.length ==1 && result[0].returnCode=='6'){
+                        await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'W', SampleCheckDate : todayCheck }} } });
                         await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
                     }else{
-                        for(let jj = 0; jj< result.length; jj++){
-                            let colResult = result[jj];
-                            await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : colResult.dataset_id, column: colResult.column, SampleCheckCode : colResult.returnCode ,SampleCheckMsg : config.code[colResult.returnCode]}  });
+                        await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
+                        if (result[0].returnCode=='1' || result[0].returnCode=='2' || result[0].returnCode=='3'){
+                            await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
+                        }else{
+                            for(let jj = 0; jj< result.length; jj++){
+                                let colResult = result[jj];
+                                await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : colResult.dataset_id, column: colResult.column, SampleCheckCode : colResult.returnCode ,SampleCheckMsg : config.code[colResult.returnCode]}  });
+                            }
                         }
                     }
+
                 }
 
             }//for
