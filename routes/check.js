@@ -46,7 +46,8 @@ router.post('/', async function(req, res, next) {
         await collectionHistory.insertOne(   {date: todayTime, 'total_count' : await findResult.count() } );
         const history_id = await collectionHistory.find().sort( { "_id": -1 } ).limit(1).toArray();
 
-
+        console.log(history_id[0]);
+        logger.info('sample fail history parent_id: ' + history_id[0]);
         logger.info('Backup day: ' + backupDay);
         logger.info('Total count: ' + findResult.count());
 
@@ -91,7 +92,7 @@ router.post('/', async function(req, res, next) {
                     f_count++;
                     logger.error('샘플 파일 존재하지 않습니다: ' + item.dataset_id);
                     await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
-                    await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0]._id, 'dataset_id' : item.dataset_id, SampleCheckCode : '7' ,SampleCheckMsg : '샘플 파일 존재하지 않습니다'}  });
+                    await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : item.dataset_id, SampleCheckCode : '7' ,SampleCheckMsg : '샘플 파일 존재하지 않습니다'}  });
                     continue;
                 }
 
@@ -101,17 +102,17 @@ router.post('/', async function(req, res, next) {
                 if (result[0].returnCode=='0' ){
                     s_count++;
                     await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'Y', SampleCheckDate : todayCheck }} } });
-                    await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0]._id, 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
+                    await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
                 }else{
                     f_count++;
                     await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
 
                     if (result[0].returnCode=='1' || result[0].returnCode=='2' || result[0].returnCode=='3'){
-                        await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0]._id, 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
+                        await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
                     }else{
                         for(let jj = 0; jj< result.length; jj++){
                             let colResult = result[jj];
-                            await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0]._id, 'dataset_id' : colResult.dataset_id, column: colResult.column, SampleCheckCode : colResult.returnCode ,SampleCheckMsg : config.code[colResult.returnCode]}  });
+                            await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : colResult.dataset_id, column: colResult.column, SampleCheckCode : colResult.returnCode ,SampleCheckMsg : config.code[colResult.returnCode]}  });
                         }
                     }
                 }
@@ -120,9 +121,10 @@ router.post('/', async function(req, res, next) {
 
             logger.info('Sample validate done');
 
-            await collection.bulkWrite(bulk);
-            await collectionFailHistory.bulkWrite(bulk_failHistory);
-            logger.info('bulk done');
+            let bulkcount1 = await collection.bulkWrite(bulk);
+            let bulkcount2 = await collectionFailHistory.bulkWrite(bulk_failHistory);
+            logger.info('collection.bulk: ' + bulkcount1.matchedCount);
+            logger.info('collectionFailHistory.bulk: ' + bulkcount2.insertedCount);
 
             await collectionHistory.updateOne( {date: todayTime},  { $inc : {'exec_count' : findList.length, 'success_count': s_count, 'fail_count':f_count} } , {upsert: true} );
             logger.info('Sample check history update!');
@@ -133,7 +135,7 @@ router.post('/', async function(req, res, next) {
         }//while
 
         await collectionHistory.deleteMany( { date : {$lt: backupDay } });
-        await collectionFailHistory.deleteMany( { parent_id : {$ne: history_id } });
+        await collectionFailHistory.deleteMany( { parent_id : {$ne: history_id[0] } });
 
 
         logger.info('Sample validate done!');
