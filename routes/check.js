@@ -33,7 +33,7 @@ router.post('/', async function(req, res, next) {
         const collectionHistory = db.collection('samplehistory');
 
         await db.createCollection('samplefail_history').then(value => {}).catch(error => {});
-        const collectionFailHistory = db.collection('samplefail_history');
+        const collectionResHistory = db.collection('sampleresult_history');
 
         const todayCheck = moment().tz('Asia/Seoul').format("YYYY-MM-DD");
         const backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYY-MM-DD");
@@ -46,7 +46,6 @@ router.post('/', async function(req, res, next) {
         await collectionHistory.insertOne(   {date: todayTime, 'total_count' : await findResult.count() } );
         const history_id = await collectionHistory.find().sort( { "_id": -1 } ).limit(1).toArray();
 
-        console.log(history_id[0]);
         logger.info('sample fail history parent_id: ' + history_id[0]);
         logger.info('Backup day: ' + backupDay);
         logger.info('Total count: ' + findResult.count());
@@ -68,9 +67,9 @@ router.post('/', async function(req, res, next) {
                 // ,{$group: {_id:"$dataset_id", name: {$addToSet: "$name"}, nullable: {$addToSet: "$nullable"}, data_type:{$addToSet:"$data_type"}}}
                 ]).toArray();
 
-            let f_count = 0, s_count = 0;
+            let f_count = 0, s_count = 0, w_count = 0, e_count = 0;
             let bulk = [];
-            let bulk_failHistory = [];
+            let bulk_resHistory = [];
             let workBook;
 
             logger.info('Sample validate start');
@@ -92,56 +91,52 @@ router.post('/', async function(req, res, next) {
                     f_count++;
                     logger.error('샘플 파일 존재하지 않습니다: ' + item.dataset_id);
                     await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
+                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : item.dataset_id, result: 'F', columns : [{column : "" , SampleCheckCode : '7' ,SampleCheckMsg : config.code['7'] }]  }});
                     continue;
                 }
 
                 let grouped = await groupBy(findList_result, colList => colList.dataset_id);
                 let result = await sampleValidation(workBook, item.dataset_id, grouped.get(item.dataset_id));
 
-                //fail history : no record : code : 0 / 7
-                if (result[0].returnCode=='0' ){
+
+                await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0]}, update: { $set: { SampleYn: 'Y', SampleCheckDate : todayCheck }} } });
+                if (result[1]=='0' ){
                     s_count++;
-                    await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'Y', SampleCheckDate : todayCheck }} } });
-                    // await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
-                }else{
-                    f_count++;
+                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'Y', columns : [{column : "" , SampleCheckCode : result[1] ,SampleCheckMsg : config.code[result[1]] }]  }});
+                }else if (result[1]=='1' || result[1]=='2' || result[1]=='3') {
+                    e_count++;
+                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'N', columns : [{column : "" , SampleCheckCode : result[1] ,SampleCheckMsg : config.code[result[1]] }]  }});
 
-                    if(result.length ==1 && result[0].returnCode=='6'){
-                        await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'W', SampleCheckDate : todayCheck }} } });
-                        await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
-                    }else{
-                        await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0].dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
-                        if (result[0].returnCode=='1' || result[0].returnCode=='2' || result[0].returnCode=='3'){
-                            await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : result[0].dataset_id, SampleCheckCode : result[0].returnCode ,SampleCheckMsg : config.code[result[0].returnCode]}  });
-                        }else{
-                            for(let jj = 0; jj< result.length; jj++){
-                                let colResult = result[jj];
-                                await bulk_failHistory.push({insertOne : {date: todayTime, parent_id: history_id[0], 'dataset_id' : colResult.dataset_id, column: colResult.column, SampleCheckCode : colResult.returnCode ,SampleCheckMsg : config.code[colResult.returnCode]}  });
-                            }
-                        }
-                    }
-
+                }else {
+                    if(result[1] =='W')
+                        w_count++;
+                    else
+                        e_count++;
+                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: result[1], columns: result[2]}  });
                 }
+
 
             }//for
 
             logger.info('Sample validate done');
 
             let bulkcount1 = await collection.bulkWrite(bulk);
-            let bulkcount2 = await collectionFailHistory.bulkWrite(bulk_failHistory);
+            let bulkcount2 = await collectionResHistory.bulkWrite(bulk_resHistory);
             logger.info('collection.bulk: ' + bulkcount1.matchedCount);
-            logger.info('collectionFailHistory.bulk: ' + bulkcount2.insertedCount);
+            logger.info('collectionResHistory.bulk: ' + bulkcount2.insertedCount);
 
-            await collectionHistory.updateOne( {date: todayTime},  { $inc : {'exec_count' : findList.length, 'success_count': s_count, 'fail_count':f_count} } , {upsert: true} );
+            await collectionHistory.updateOne( {date: todayTime},  { $inc : {'exec_count' : findList.length, 'success_count': s_count, 'error_count':e_count, 'file_notfound':f_count, 'warn_count': w_count} } , {upsert: true} );
             logger.info('Sample check history update!');
 
             findList = await collection.find({asset_type:'table', status:'검토완료' , $or: [ { SampleCheckDate : null } , { SampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize).toArray();
             logger.info('One cycle done[pool size / findList length]');
 
+            console.log('one cycle');
+
         }//while
 
         await collectionHistory.deleteMany( { date : {$lt: backupDay } });
-        await collectionFailHistory.deleteMany( { parent_id : {$ne: history_id[0] } });
+        await collectionResHistory.deleteMany( { date : {$ne: todayTime } });
 
 
         logger.info('Sample validate done!');
@@ -174,39 +169,54 @@ async function sampleValidation(workBook, dataset_id, col_list) {
 
     if ( worksheet.length == 0 ){
         logger.error('파일이 비어있습니다: ' + dataset_id);
-        return [{ returnCode : '1', returnMsg : '파일이 비어있습니다', dataset_id:dataset_id }];
+        return [dataset_id, '1'];
     }else{
         if( Object.keys(worksheet[0]).length != col_list.length) {
             logger.error('영문 컬럼 개수가 다릅니다: ' + dataset_id);
-            return [{ returnCode : '2', returnMsg : '영문 컬럼 개수가 다릅니다', dataset_id:dataset_id }];
+            return [dataset_id, '2'];
         }else{
 
             let compareCheck = 0;
             let result = new Array();
             let headers;
+            let warnCheck = 'W';
             headers = await get_header_row(workBook.Sheets[sheet]);
 
             for (let j = 0; j < col_list.length; j++) {
                 let itemCol = col_list[j];
 
+
                 for (let jj = 0; jj < headers.length; jj++) {
                     let colName = headers[jj];
+
+                    let SampleCheck = new Array();
+                    let columns = new Object();
 
                     if (colName.eng == itemCol.name){
                         let output = await col_check( workBook.Sheets[sheet], jj, itemCol.nullable, itemCol.data_type );
 
                         if(!output[0]){
-                            result.push( { column:colName.eng, returnCode : '4', returnMsg : 'null 값이 존재합니다', dataset_id:dataset_id});
+                            SampleCheck.push( { returnCode : '4', returnMsg : 'null 값이 존재합니다'});
+                            warnCheck = 'N';
                         }
                         if(!output[1]){
-                            result.push( { column:colName.eng, returnCode : '5', returnMsg : '데이터타입이 다릅니다', dataset_id:dataset_id });
+                            SampleCheck.push( { returnCode : '5', returnMsg : '데이터타입이 다릅니다' });
+                            warnCheck = 'N';
                         }
                         if(colName.kor == null){
-                            result.push( { column:colName.eng, returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다', dataset_id:dataset_id });
+                            // result.push( { column:colName.eng, returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다', dataset_id:dataset_id });
+                            SampleCheck.push( { returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다' });
+                        }
+
+                        if(SampleCheck.length > 0){
+                            columns.column = colName.eng;
+                            columns.SampleChecks = SampleCheck;
+                            result.push(columns);
                         }
                         continue;
                     }
                 }//for jj
+
 
                 for (let key in worksheet[0]){
                     if ( worksheet[0][key].toString().toLowerCase() == itemCol.name.toLowerCase() ) {
@@ -214,19 +224,19 @@ async function sampleValidation(workBook, dataset_id, col_list) {
                         continue;
                     }
                 }//for key
-
             }//for j
 
             if (col_list.length == compareCheck) {
                 if(result.length > 0){
-                    return result;
+                    return [dataset_id, warnCheck, result];
                 }else{
                     logger.info('Sample validate success: ' + dataset_id );
-                    return [{ returnCode : '0', returnMsg : '샘플 파일 검증 성공', dataset_id:dataset_id }];
+                    return [dataset_id, '0'];
                 }
             }else {
                 logger.error('Col different: ' + dataset_id );
-                return [{ returnCode : '3', returnMsg : '영문 컬럼명이 다릅니다', dataset_id:dataset_id }];
+                return [dataset_id, '3' ];
+                // return [{ returnCode : '3', returnMsg : '영문 컬럼명이 다릅니다', dataset_id:dataset_id }];
             }
 
         }
