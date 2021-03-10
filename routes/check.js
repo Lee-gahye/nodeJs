@@ -36,7 +36,7 @@ router.post('/', async function(req, res, next) {
         const collectionResHistory = db.collection('sampleresult_history');
 
         const todayCheck = moment().tz('Asia/Seoul').format("YYYY-MM-DD");
-        const backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYY-MM-DD");
+        const backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYYMMDDhhmmss");
         const todayTime = moment().tz('Asia/Seoul').format("YYYYMMDDhhmmss");
 
         collection.updateMany( {}, {$rename:{"sampleYn":"SampleYn"}})
