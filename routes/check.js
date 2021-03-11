@@ -91,7 +91,7 @@ router.post('/', async function(req, res, next) {
                     f_count++;
                     logger.error('샘플 파일 존재하지 않습니다: ' + item.dataset_id);
                     await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
-                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : item.dataset_id, result: 'F', columns : [{column : "" , SampleCheckCode : '7' ,SampleCheckMsg : config.code['7'] }]  }});
+                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : item.dataset_id, result: 'F', columns : [{column : "" , SampleChecks : [ {returnCode : '7', returnMsg : config.code['7']} ] }]  }});
                     continue;
                 }
 
@@ -102,10 +102,10 @@ router.post('/', async function(req, res, next) {
                 await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0]}, update: { $set: { SampleYn: 'Y', SampleCheckDate : todayCheck }} } });
                 if (result[1]=='0' ){
                     s_count++;
-                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'Y', columns : [{column : "" , SampleCheckCode : result[1] ,SampleCheckMsg : config.code[result[1]] }]  }});
+                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'Y', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : config.code[result[1]] }] }]  }});
                 }else if (result[1]=='1' || result[1]=='2' || result[1]=='3') {
                     e_count++;
-                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'N', columns : [{column : "" , SampleCheckCode : result[1] ,SampleCheckMsg : config.code[result[1]] }]  }});
+                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'N', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : config.code[result[1]] }] }]  }});
 
                 }else {
                     if(result[1] =='W')
