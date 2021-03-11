@@ -32,7 +32,7 @@ router.post('/', async function(req, res, next) {
         await db.createCollection('samplehistory').then(value => {}).catch(error => {});
         const collectionHistory = db.collection('samplehistory');
 
-        await db.createCollection('samplefail_history').then(value => {}).catch(error => {});
+        await db.createCollection('sampleresult_history').then(value => {}).catch(error => {});
         const collectionResHistory = db.collection('sampleresult_history');
 
         const todayCheck = moment().tz('Asia/Seoul').format("YYYY-MM-DD");
