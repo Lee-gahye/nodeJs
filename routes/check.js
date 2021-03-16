@@ -39,7 +39,6 @@ router.post('/', async function(req, res, next) {
         const backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYYMMDDhhmmss");
         const todayTime = moment().tz('Asia/Seoul').format("YYYYMMDDhhmmss");
 
-        collection.updateMany( {}, {$rename:{"sampleYn":"SampleYn"}})
         let findResult = await collection.find({asset_type:'table', status:'검토완료',  $or: [ { SampleCheckDate : null } , { SampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize);
         let findList = await findResult.toArray();
 
@@ -90,7 +89,7 @@ router.post('/', async function(req, res, next) {
                 }else{
                     f_count++;
                     logger.error('샘플 파일 존재하지 않습니다: ' + item.dataset_id);
-                    await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { SampleYn: 'N', SampleCheckDate : todayCheck }} } });
+                    await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { sampleYn: 'N', SampleCheckDate : todayCheck }} } });
                     await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : item.dataset_id, result: 'F', columns : [{column : "" , SampleChecks : [ {returnCode : '7', returnMsg : config.code['7']} ] }]  }});
                     continue;
                 }
@@ -99,7 +98,7 @@ router.post('/', async function(req, res, next) {
                 let result = await sampleValidation(workBook, item.dataset_id, grouped.get(item.dataset_id));
 
 
-                await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0]}, update: { $set: { SampleYn: 'Y', SampleCheckDate : todayCheck }} } });
+                await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0]}, update: { $set: { sampleYn: 'Y', SampleCheckDate : todayCheck }} } });
                 if (result[1]=='0' ){
                     s_count++;
                     await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'Y', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : config.code[result[1]] }] }]  }});
