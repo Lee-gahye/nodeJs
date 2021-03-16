@@ -229,7 +229,7 @@ async function sampleValidation(workBook, dataset_id, col_list) {
                 }//for key
 
                 if (compareVal == '' && !check){
-                    compareVal = '[ ' + itemCol.name.toLowerCase() + ' ] ';
+                    compareVal = '[ ' + itemCol.name + ' ] ';
                 }
             }//for j
 
