@@ -102,10 +102,12 @@ router.post('/', async function(req, res, next) {
                 if (result[1]=='0' ){
                     s_count++;
                     await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'Y', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : config.code[result[1]] }] }]  }});
-                }else if (result[1]=='1' || result[1]=='2' || result[1]=='3') {
+                }else if (result[1]=='1' || result[1]=='2') {
                     e_count++;
                     await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'N', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : config.code[result[1]] }] }]  }});
-
+                }else if (result[1]=='3') {
+                    e_count++;
+                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'N', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : result[2] + config.code[result[1]] }] }]  }});
                 }else {
                     if(result[1] =='W')
                         w_count++;
@@ -176,14 +178,15 @@ async function sampleValidation(workBook, dataset_id, col_list) {
         }else{
 
             let compareCheck = 0;
+            let compareVal = '';
             let result = new Array();
             let headers;
             let warnCheck = 'W';
             headers = await get_header_row(workBook.Sheets[sheet]);
 
+
             for (let j = 0; j < col_list.length; j++) {
                 let itemCol = col_list[j];
-
 
                 for (let jj = 0; jj < headers.length; jj++) {
                     let colName = headers[jj];
@@ -216,13 +219,18 @@ async function sampleValidation(workBook, dataset_id, col_list) {
                     }
                 }//for jj
 
-
+                let check = false;
                 for (let key in worksheet[0]){
                     if ( worksheet[0][key].toString().toLowerCase() == itemCol.name.toLowerCase() ) {
                         compareCheck++;
+                        check = true;
                         continue;
                     }
                 }//for key
+
+                if (compareVal == '' && !check){
+                    compareVal = '[ ' + worksheet[0][key].toString().toLowerCase() + ' ] ';
+                }
             }//for j
 
             if (col_list.length == compareCheck) {
@@ -234,7 +242,7 @@ async function sampleValidation(workBook, dataset_id, col_list) {
                 }
             }else {
                 logger.error('Col different: ' + dataset_id );
-                return [dataset_id, '3' ];
+                return [dataset_id, '3' , compareVal];
                 // return [{ returnCode : '3', returnMsg : '영문 컬럼명이 다릅니다', dataset_id:dataset_id }];
             }
 
