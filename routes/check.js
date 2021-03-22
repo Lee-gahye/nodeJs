@@ -167,87 +167,76 @@ async function sampleValidation(workBook, dataset_id, col_list) {
     let sheet = workBook.SheetNames[0]; // 배열이므로 .length를 사용하여 갯수 확인가능
     let worksheet = XLSX.utils.sheet_to_json(workBook.Sheets[sheet]);
 
-
     if ( worksheet.length == 0 ){
         logger.error('파일이 비어있습니다: ' + dataset_id);
         return [dataset_id, '1'];
     }else{
-        if( Object.keys(worksheet[0]).length != col_list.length) {
+        let compareCheck = 0;
+        let compareVal = '';
+        let result = new Array();
+        let headers;
+        let warnCheck = 'W';
+        headers = await get_header_row(workBook.Sheets[sheet]);
+
+        if(headers.length != col_list.length){
             logger.error('영문 컬럼 개수가 다릅니다: ' + dataset_id);
             return [dataset_id, '2'];
-        }else{
-
-            let compareCheck = 0;
-            let compareVal = '';
-            let result = new Array();
-            let headers;
-            let warnCheck = 'W';
-            headers = await get_header_row(workBook.Sheets[sheet]);
-
-
-            for (let j = 0; j < col_list.length; j++) {
-                let itemCol = col_list[j];
-
-                for (let jj = 0; jj < headers.length; jj++) {
-                    let colName = headers[jj];
-
-                    let SampleCheck = new Array();
-                    let columns = new Object();
-
-                    if (colName.eng == itemCol.name){
-                        let output = await col_check( workBook.Sheets[sheet], jj, itemCol.nullable, itemCol.data_type );
-
-                        if(!output[0]){
-                            SampleCheck.push( { returnCode : '4', returnMsg : 'null 값이 존재합니다'});
-                            warnCheck = 'N';
-                        }
-                        if(!output[1]){
-                            SampleCheck.push( { returnCode : '5', returnMsg : '데이터타입이 다릅니다' });
-                            warnCheck = 'N';
-                        }
-                        if(colName.kor == null){
-                            // result.push( { column:colName.eng, returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다', dataset_id:dataset_id });
-                            SampleCheck.push( { returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다' });
-                        }
-
-                        if(SampleCheck.length > 0){
-                            columns.column = colName.eng;
-                            columns.SampleChecks = SampleCheck;
-                            result.push(columns);
-                        }
-                        continue;
-                    }
-                }//for jj
-
-                let check = false;
-                for (let key in worksheet[0]){
-                    if ( worksheet[0][key].toString().toLowerCase() == itemCol.name.toLowerCase() ) {
-                        compareCheck++;
-                        check = true;
-                        continue;
-                    }
-                }//for key
-
-                if (compareVal == '' && !check){
-                    compareVal = '[ ' + itemCol.name + ' ] ';
-                }
-            }//for j
-
-            if (col_list.length == compareCheck) {
-                if(result.length > 0){
-                    return [dataset_id, warnCheck, result];
-                }else{
-                    logger.info('Sample validate success: ' + dataset_id );
-                    return [dataset_id, '0'];
-                }
-            }else {
-                logger.error('Col different: ' + dataset_id );
-                return [dataset_id, '3' , compareVal];
-                // return [{ returnCode : '3', returnMsg : '영문 컬럼명이 다릅니다', dataset_id:dataset_id }];
-            }
-
         }
 
+        for (let j = 0; j < col_list.length; j++) {
+            let itemCol = col_list[j];
+
+            let check = false;
+            for (let jj = 0; jj < headers.length; jj++) {
+                let colName = headers[jj];
+
+                let SampleCheck = new Array();
+                let columns = new Object();
+
+                if (colName.eng == itemCol.name){
+                    compareCheck++;
+                    check = true;
+                    let output = await col_check( workBook.Sheets[sheet], jj, itemCol.nullable, itemCol.data_type );
+
+                    if(!output[0]){
+                        SampleCheck.push( { returnCode : '4', returnMsg : 'null 값이 존재합니다'});
+                        warnCheck = 'N';
+                    }
+                    if(!output[1]){
+                        SampleCheck.push( { returnCode : '5', returnMsg : '데이터타입이 다릅니다' });
+                        warnCheck = 'N';
+                    }
+                    if(colName.kor == null){
+                        // result.push( { column:colName.eng, returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다', dataset_id:dataset_id });
+                        SampleCheck.push( { returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다' });
+                    }
+
+                    if(SampleCheck.length > 0){
+                        columns.column = colName.eng;
+                        columns.SampleChecks = SampleCheck;
+                        result.push(columns);
+                    }
+                    continue;
+                }
+            }//for jj
+
+            if (compareVal == '' && !check){
+                compareVal = '[ ' + itemCol.name + ' ] ';
+            }
+        }//for j
+
+        if (col_list.length == compareCheck) {
+            if(result.length > 0){
+                return [dataset_id, warnCheck, result];
+            }else{
+                logger.info('Sample validate success: ' + dataset_id );
+                return [dataset_id, '0'];
+            }
+        }else {
+            logger.error('Col different: ' + dataset_id );
+            return [dataset_id, '3' , compareVal];
+            // return [{ returnCode : '3', returnMsg : '영문 컬럼명이 다릅니다', dataset_id:dataset_id }];
+        }
     }
 }
 
@@ -323,7 +312,9 @@ async function get_header_row(sheet) {
         let colJson = new Object;
         colJson.eng = (cellEng && cellEng.t)?cellEng.v : null;
         colJson.kor = (cellKor && cellKor.t)?cellKor.v : null;
-        colArr.push(colJson);
+
+        if (colJson.eng != null)
+            colArr.push(colJson);
     }
 
     return colArr;
