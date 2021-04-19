@@ -41,7 +41,7 @@ router.post('/', async function(req, res, next) {
 
         const todayCheck = moment().tz('Asia/Seoul').format("YYYY-MM-DD");
         const backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYYMMDDhhmmss");
-        const backupDay2 = moment(todayCheck).subtract(1, 'y').tz('Asia/Seoul').format("YYYYMMDDhhmmss");
+        const backupDay2 = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYYMMDDhhmmss");
         const todayTime = moment().tz('Asia/Seoul').format("YYYYMMDDhhmmss");
 
         let findResult = await collection.find({asset_type:'table', status:'검토완료',  $or: [ { sampleCheckDate : null } , { sampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize);
@@ -59,13 +59,33 @@ router.post('/', async function(req, res, next) {
 
         while( findList.length > 0 ) {
             let datasetList = [];
+            let bulk = [];
+            let bulk_resHistory = [];
+
+            let sum1=0, sum2=0, sum3=0, sum4=0;
+
             for(let i=0; i<findList.length; i++) {
                 let item = findList[i];
                 await datasetList.push({ "dataset_id" : item.dataset_id});
-            }
+
+                let col_t_desc_t_cnt = await collection.find({dataset_id : item.dataset_id, asset_type: 'column'}).count();
+                let col_t_desc_s_cnt = await collection.find({dataset_id : item.dataset_id, asset_type: 'column' , "desc":{$exists:true}, $nor:[{desc:""},{desc:null}]}).count();
+                let col_t_desc_e_cnt = col_t_desc_t_cnt - col_t_desc_s_cnt;
+                let private_cnt = await collection.find({dataset_id : item.dataset_id, asset_type: 'column', privateYn :'Y'}).count();
+                let confidential_cnt = await collection.find({dataset_id : item.dataset_id, asset_type: 'column', confidentialYn :'Y'}).count();
+
+                sum1 = sum1 + col_t_desc_s_cnt;
+                sum2 = sum2 + col_t_desc_e_cnt;
+                sum3 = sum3 + private_cnt;
+                sum4 = sum4 + confidential_cnt;
+
+                await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { col_t_desc_s_cnt: col_t_desc_s_cnt, col_t_desc_e_cnt : col_t_desc_e_cnt,privateCnt:private_cnt, confidentialCnt:confidential_cnt }} } });
+                await bulk_resHistory.push({updateOne : {filter: { "dataset_id" : item.dataset_id}, update: { $set: { col_t_desc_s_cnt: col_t_desc_s_cnt, col_t_desc_e_cnt : col_t_desc_e_cnt,privateCnt:private_cnt, confidentialCnt:confidential_cnt,
+                            server_id:item.server_id, server_name:item.server_name, instance_id:item.instance_id, instance_name:item.instance_name}} } });
+            }//for
+            await collectionHistory.updateOne( {date: todayTime},  { $inc: { col_t_desc_s_cnt: sum1, col_t_desc_e_cnt : sum2, privateCnt:sum3, confidentialCnt:sum4 }} , {upsert: true} );
 
             let match_filter = { $and: [{asset_type:'column'},{ $or: datasetList}]};
-
             let findList_result = await collection.aggregate([
                 {$match : match_filter }
                 ,{$project: {"_id":0, "name":1, "nullable":1, "data_type":1, "dataset_id":1}}
@@ -73,8 +93,6 @@ router.post('/', async function(req, res, next) {
                 ]).toArray();
 
             let f_count = 0, s_count = 0, w_count = 0, e_count = 0;
-            let bulk = [];
-            let bulk_resHistory = [];
             let workBook;
 
             logger.info('Sample validate start');
