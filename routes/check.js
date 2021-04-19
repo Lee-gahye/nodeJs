@@ -79,7 +79,12 @@ router.post('/', async function(req, res, next) {
                 sum3 = sum3 + private_cnt;
                 sum4 = sum4 + confidential_cnt;
 
-                await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { col_t_desc_s_cnt: col_t_desc_s_cnt, col_t_desc_e_cnt : col_t_desc_e_cnt,privateCnt:private_cnt, confidentialCnt:confidential_cnt }} } });
+                let dataset_name_ck =  await collection.find({dataset_id : item.dataset_id, asset_type: 'table' , $nor:[{dataset_name:""},{dataset_name:null}]}).count();
+                let desc_ck =await collection.find({dataset_id : item.dataset_id, asset_type: 'table', $nor:[{desc:""},{desc:null}]}).count();
+                let tags_ck =await collection.find({dataset_id : item.dataset_id, asset_type: 'table', $nor:[{tags:""},{tags:null}]}).count();
+
+                await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { col_t_desc_s_cnt: col_t_desc_s_cnt, col_t_desc_e_cnt : col_t_desc_e_cnt,privateCnt:private_cnt, confidentialCnt:confidential_cnt,
+                                dataset_name_ck:dataset_name_ck, desc_ck:desc_ck, tags_ck:tags_ck }} } });
                 await bulk_resHistory.push({insertOne :  { dataset_id : item.dataset_id, col_t_desc_s_cnt: col_t_desc_s_cnt, col_t_desc_e_cnt : col_t_desc_e_cnt,privateCnt:private_cnt, confidentialCnt:confidential_cnt,
                             server_id:item.server_id, server_name:item.server_name, instance_id:item.instance_id, instance_name:item.instance_name} });
             }//for
