@@ -80,8 +80,8 @@ router.post('/', async function(req, res, next) {
                 sum4 = sum4 + confidential_cnt;
 
                 await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { col_t_desc_s_cnt: col_t_desc_s_cnt, col_t_desc_e_cnt : col_t_desc_e_cnt,privateCnt:private_cnt, confidentialCnt:confidential_cnt }} } });
-                await bulk_resHistory.push({updateOne : {filter: { "dataset_id" : item.dataset_id}, update: { $set: { col_t_desc_s_cnt: col_t_desc_s_cnt, col_t_desc_e_cnt : col_t_desc_e_cnt,privateCnt:private_cnt, confidentialCnt:confidential_cnt,
-                            server_id:item.server_id, server_name:item.server_name, instance_id:item.instance_id, instance_name:item.instance_name}} } });
+                await bulk_resHistory.push({insertOne :  { dataset_id : item.dataset_id, col_t_desc_s_cnt: col_t_desc_s_cnt, col_t_desc_e_cnt : col_t_desc_e_cnt,privateCnt:private_cnt, confidentialCnt:confidential_cnt,
+                            server_id:item.server_id, server_name:item.server_name, instance_id:item.instance_id, instance_name:item.instance_name} });
             }//for
             await collectionHistory.updateOne( {date: todayTime},  { $inc: { col_t_desc_s_cnt: sum1, col_t_desc_e_cnt : sum2, privateCnt:sum3, confidentialCnt:sum4 }} , {upsert: true} );
 
@@ -114,7 +114,7 @@ router.post('/', async function(req, res, next) {
                     f_count++;
                     logger.error('샘플 파일 존재하지 않습니다: ' + item.dataset_id);
                     await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : item.dataset_id}, update: { $set: { sampleYn: 'N', sampleCheckDate : todayCheck }} } });
-                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : item.dataset_id, result: 'F', columns : [{column : "" , SampleChecks : [ {returnCode : '7', returnMsg : config.code['7']} ] }]  }});
+                    await bulk_resHistory.push({updateOne : {filter: {"dataset_id" : item.dataset_id}, update :  { $set: {date: todayTime, 'dataset_id' : item.dataset_id, result: 'F', columns : [{column : "" , SampleChecks : [ {returnCode : '7', returnMsg : config.code['7']} ] }]  }}}});
                     continue;
                 }
 
@@ -125,19 +125,19 @@ router.post('/', async function(req, res, next) {
                 await bulk.push({updateOne : {filter: {asset_type:'table', "dataset_id" : result[0]}, update: { $set: { sampleYn: 'Y', sampleCheckDate : todayCheck }} } });
                 if (result[1]=='0' ){
                     s_count++;
-                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'Y', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : config.code[result[1]] }] }]  }});
+                    await bulk_resHistory.push({updateOne : {filter: {"dataset_id" : item.dataset_id}, update : { $set: {date: todayTime, 'dataset_id' : result[0], result: 'Y', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : config.code[result[1]] }] }]  }}}});
                 }else if (result[1]=='1' || result[1]=='2') {
                     e_count++;
-                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'N', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : config.code[result[1]] }] }]  }});
+                    await bulk_resHistory.push({updateOne : {filter: {"dataset_id" : item.dataset_id}, update :  { $set:{date: todayTime, 'dataset_id' : result[0], result: 'N', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : config.code[result[1]] }] }]  }}}});
                 }else if (result[1]=='3') {
                     e_count++;
-                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: 'N', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : result[2] + config.code[result[1]] }] }]  }});
+                    await bulk_resHistory.push({updateOne : {filter: {"dataset_id" : item.dataset_id}, update : { $set: {date: todayTime, 'dataset_id' : result[0], result: 'N', columns : [{column : "" , SampleChecks : [{ returnCode : result[1], returnMsg : result[2] + config.code[result[1]] }] }]  }}}});
                 }else {
                     if(result[1] =='W')
                         w_count++;
                     else
                         e_count++;
-                    await bulk_resHistory.push({insertOne : {date: todayTime, 'dataset_id' : result[0], result: result[1], columns: result[2]}  });
+                    await bulk_resHistory.push({updateOne : {filter: {"dataset_id" : item.dataset_id}, update : { $set: {date: todayTime, 'dataset_id' : result[0], result: result[1], columns: result[2]}  }}});
                 }
 
 
