@@ -40,8 +40,8 @@ router.post('/', async function(req, res, next) {
 
 
         const todayCheck = moment().tz('Asia/Seoul').format("YYYY-MM-DD");
-        const backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYYMMDDhhmmss");
-        const todayTime = moment().tz('Asia/Seoul').format("YYYYMMDDhhmmss");
+        const backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYYMMDDHHmmss");
+        const todayTime = moment().tz('Asia/Seoul').format("YYYYMMDDHHmmss");
 
         let findResult = await collection.find({asset_type:'table', status:'검토완료',  $or: [ { sampleCheckDate : null } , { sampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize);
         let findList = await findResult.toArray();
