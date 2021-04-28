@@ -93,7 +93,7 @@ router.post('/', async function(req, res, next) {
             let match_filter = { $and: [{asset_type:'column'},{ $or: datasetList}]};
             let findList_result = await collection.aggregate([
                 {$match : match_filter }
-                ,{$project: {"_id":0, "name":1, "nullable":1, "data_type":1, "dataset_id":1}}
+                ,{$project: {"_id":0, "name":1, "nullable":1, "data_type":1, "dataset_id":1, "desc":1}}
                 // ,{$group: {_id:"$dataset_id", name: {$addToSet: "$name"}, nullable: {$addToSet: "$nullable"}, data_type:{$addToSet:"$data_type"}}}
                 ]).toArray();
 
@@ -234,9 +234,14 @@ async function sampleValidation(workBook, dataset_id, col_list) {
                         SampleCheck.push( { returnCode : '5', returnMsg : '데이터타입이 다릅니다' });
                         warnCheck = 'N';
                     }
-                    if(colName.kor == null){
+                    if(colName.kor == null) {
                         // result.push( { column:colName.eng, returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다', dataset_id:dataset_id });
-                        SampleCheck.push( { returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다' });
+                        SampleCheck.push({returnCode: '6', returnMsg: '한글 컬럼이 존재하지 않습니다'});
+                    }else if(itemCol.desc == null){
+                        SampleCheck.push( { returnCode : '8', returnMsg : "한글 컬럼명이 다름" });
+                    }else if( itemCol.desc!=null &&  colName.kor!=null && ( colName.kor.replace(" ", "") != itemCol.desc.replace(" ","") ) ){
+                        // result.push( { column:colName.eng, returnCode : '6', returnMsg : '한글 컬럼이 존재하지 않습니다', dataset_id:dataset_id });
+                        SampleCheck.push( { returnCode : '8', returnMsg : "한글 컬럼명이 다름" });
                     }
 
                     if(SampleCheck.length > 0){
