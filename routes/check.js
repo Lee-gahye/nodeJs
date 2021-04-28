@@ -41,7 +41,6 @@ router.post('/', async function(req, res, next) {
 
         const todayCheck = moment().tz('Asia/Seoul').format("YYYY-MM-DD");
         const backupDay = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYYMMDDhhmmss");
-        const backupDay2 = moment(todayCheck).subtract(backupValue, backupUnit).tz('Asia/Seoul').format("YYYYMMDDhhmmss");
         const todayTime = moment().tz('Asia/Seoul').format("YYYYMMDDhhmmss");
 
         let findResult = await collection.find({asset_type:'table', status:'검토완료',  $or: [ { sampleCheckDate : null } , { sampleCheckDate: { $ne: todayCheck }} ]}).limit(config.poolSize);
@@ -52,7 +51,6 @@ router.post('/', async function(req, res, next) {
 
         logger.info('sample fail history parent_id: ' + history_id[0]);
         logger.info('Backup day: ' + backupDay);
-        logger.info('Backup day2: ' + backupDay2);
         logger.info('Total count: ' + findResult.count());
 
         const fileRoot = config.root;
@@ -166,7 +164,7 @@ router.post('/', async function(req, res, next) {
         }//while
 
         await collectionHistory.deleteMany( { date : {$lt: backupDay } });
-        await collectionResHistory.deleteMany( { date : {$lt: backupDay2 } });
+        await collectionResHistory.deleteMany( { date : {$lt: backupDay } });
 
         logger.info('Sample validate done!');
         console.log('DONE!')
